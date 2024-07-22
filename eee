@@ -1,0 +1,2031 @@
+--
+-- Supernova
+-- 
+-- Created by: @IceStuds, @SZCVAK
+-- Date: 14/08/2203
+-- 
+-- Version: 1.02xdt
+-- External APIs used: ColorAPI, i68
+-- 
+-- Version legend: x - Prototype build (pre v1.1)
+--                 d - Developer-only build (has debug stuff)
+--                 t - Testing build (dedicated to testers)
+--
+-- Successor to: Nova (a private script)
+
+-- Services and APIs
+local run_service = game:GetService('RunService')
+local core_gui    = game:GetService('CoreGui')
+local players     = game:GetService('Players')
+local starter_gui = game:GetService('StarterGui')
+local log_service = game:GetService('LogService')
+local cxa_service = game:GetService('ContextActionService')
+local marketplace_service = game:GetService('MarketplaceService')
+
+-- External
+loadstring(game:HttpGet("https://pastebin.com/raw/jEDjp9Cw"))() -- ColorAPI
+loadstring(game:HttpGet("https://pastebin.com/raw/mL9UAiYi"))() -- i68
+
+-- For measuring load times
+local start_time = tick()
+print('[Supernova]: Starting')
+
+-- Settings and other stuff
+getgenv().supernova = {
+	prefix = '-',            -- e.g -vgcrash, where the "-" is the prefix
+	
+	whitelist = {},          -- people who can use your commands
+	blacklist = {},          -- people who are not allowed in your server
+	
+	blgwhitelist = {},       -- people who can use crash gears in your server
+	
+	display_fallback = true, -- if no player was found from name, check again using display names
+	personns = false         -- will change automatically
+}
+getgenv().supernova.blgears = {'VampireVanquisher', 'IvoryPeriastron'} -- Blacklisted gears
+
+-- Private variables
+lp = players.LocalPlayer
+
+active = {    -- For running tasks
+	antifling = false,
+	antipunish = false,
+	antisgv = false,
+	antidog = false,
+	antifreeze = false,
+	antijail = false,
+	antikill = false,
+	blgears = false,
+	perm = false,
+	loopgrab = false,
+	ark = false,
+	attach = false,
+	fixvel = false,
+	sbx = false
+}
+
+local commands = {} -- Defined here so commands that need to access the table are allowed to do so
+local threads = {}  -- For code that runs on different threads. :Disconnect() can be called to avoid rejoin
+
+local hue_names = {}
+local hue = 0
+
+suppressed = false
+listening = false
+
+local rkick = {
+	active = false,
+	target = '',
+	time = 0
+}
+
+local spam = {
+	active = false,
+	cmds = {}
+}
+
+local hookms = {
+	tm = 0,
+	active = false,
+	id = '0'
+}
+
+vis = {
+	queue = false,
+	active = false,
+	amount = 12,
+	size = '5/2/1',
+	orbiter = lp,
+	parts = {},
+	angle = 0,
+	speed = 0.01,
+	mode = 3,
+	velocity = 51,
+	modes = {},
+	paints = {},
+	paint = 'solid',
+	radius = 10,
+	solid = Color3.fromRGB(64, 128, 255),
+	mind = 10,
+	append = 0,
+	debounce = false
+}
+
+glob = {
+	hue = 0
+}
+
+ms = lp:GetMouse()
+
+local chatbar = lp:WaitForChild("PlayerGui").Chat.Frame.ChatBarParentFrame.Frame.BoxFrame.Frame.ChatBar
+workspace.FallenPartsDestroyHeight = 0 / 0
+
+-- Structure of KAH
+_game = workspace.Terrain:FindFirstChild('_Game')
+admin = _game:FindFirstChild('Admin')
+regen = admin:FindFirstChild('Regen')
+pads = admin:FindFirstChild('Pads')
+
+-- Visualizer physics override
+settings().Physics.AllowSleep = false
+--msettings().Physics.PhysicsEnvironmentalThrottle = Enum.EnvironmentalPhysicsThrottle.Disabled
+
+------------------------------------------------------------------------
+--
+-- Visualizer modes / paints
+--
+------------------------------------------------------------------------
+
+-- Visualizer modes
+--// Classic spinning circle visualizer
+vis.modes[1] = function()
+	for i, v in pairs(vis.parts) do
+		if not v.Part or v.Part.Parent == nil then
+			execute('revis')
+			return
+		end
+		
+		coroutine.wrap(function()
+		    local angle = i * ((2 * math.pi) / #vis.parts) + vis.angle
+		    local x, z = getxz(angle, vis.mind)
+		    
+		    local cframe = (vis.orbiter.Character.HumanoidRootPart.CFrame * CFrame.new(x, 0, z)).p
+		    local lookAt = vis.orbiter.Character.HumanoidRootPart.Position
+		    
+		    move_part(v.Part, CFrame.new(cframe + Vector3.new(0, v.Padding, 0), lookAt))
+		end)()
+	end
+end
+
+--// Also a spinning circle but with vertically spinning parts
+vis.modes[2] = function()
+	for i, v in pairs(vis.parts) do
+		coroutine.wrap(function()
+			if not v.Part or v.Part.Parent == nil then
+				execute('revis')
+				return
+			end
+		
+		    local angle = i * ((2 * math.pi) / #vis.parts) + vis.angle
+		    local x, z = getxz(angle, vis.mind)
+		    
+		    local cframe = (vis.orbiter.Character.HumanoidRootPart.CFrame * CFrame.new(x, 0, z)).p
+		    local lookAt = vis.orbiter.Character.HumanoidRootPart.Position
+		    
+		    move_part(v.Part, CFrame.new(cframe + Vector3.new(0, v.Padding, 0), lookAt) * CFrame.Angles(0, vis.angle, 0))
+		end)()
+	end
+end
+
+--// Also a spinning circle but with horizontally spinning parts (x axis)
+vis.modes[3] = function()
+	for i, v in pairs(vis.parts) do
+		coroutine.wrap(function()
+			if not v.Part or v.Part.Parent == nil then
+				execute('revis')
+				return
+			end
+		
+		    local angle = i * ((2 * math.pi) / #vis.parts) + vis.angle
+		    local x, z = getxz(angle, vis.mind)
+		    
+		    local cframe = (vis.orbiter.Character.HumanoidRootPart.CFrame * CFrame.new(x, 0, z)).p
+		    local lookAt = vis.orbiter.Character.HumanoidRootPart.Position
+		    
+		    move_part(v.Part, CFrame.new(cframe + Vector3.new(0, v.Padding, 0), lookAt) * CFrame.Angles(vis.angle, 0, 0))
+		end)()
+	end
+end
+
+--// Also a spinning circle but with horizontally spinning parts (z axis)
+vis.modes[4] = function()
+	for i, v in pairs(vis.parts) do
+		coroutine.wrap(function()
+			if not v.Part or v.Part.Parent == nil then
+				execute('revis')
+				return
+			end
+		
+		    local angle = i * ((2 * math.pi) / #vis.parts) + vis.angle
+		    local x, z = getxz(angle, vis.mind)
+		    
+		    local cframe = (vis.orbiter.Character.HumanoidRootPart.CFrame * CFrame.new(x, 0, z)).p
+		    local lookAt = vis.orbiter.Character.HumanoidRootPart.Position
+		    
+		    move_part(v.Part, CFrame.new(cframe + Vector3.new(0, v.Padding, 0), lookAt) * CFrame.Angles(0, 0, vis.angle))
+		end)()
+	end
+end
+
+vis.modes[5] = function()
+	for i, v in pairs(collection_service:GetTagged('Vis_Part')) do
+		coroutine.wrap(function()
+			if not v or v.Parent == nil then
+				execute('revis')
+				return
+			end
+		
+		    local angle = i * ((2 * math.pi) / vis.amount) + vis.angle
+		    local x, z = getxz(angle, vis.mind)
+		    
+		    local cframe = (vis.orbiter.Character.HumanoidRootPart.CFrame * CFrame.new(x, 0, z)).p
+		    local lookAt = vis.orbiter.Character.HumanoidRootPart.Position
+		    local var = math.sin(vis.angle * vis.freq + i * 0.5) * vis.amp
+		    local var = math.sin(vis.var * vis.freq * i * 0.5) * vis.amp
+		    
+		    move_part(v, CFrame.new(cframe + Vector3.new(0, var, 0)), lookAt)
+		end)()
+	end
+end
+
+-- Visualizer paints
+vis.paints['hue'] = function()
+	for i, v in pairs(vis.parts) do
+		colorAPI.color(v.Part, Color3.fromHSV(glob.hue, 1, 1))
+	end
+end
+
+vis.paints['solid'] = function()
+	for i, v in pairs(vis.parts) do
+		colorAPI.color(v.Part, vis.solid)
+	end
+end
+
+------------------------------------------------------------------------
+--
+-- Global functions
+--
+------------------------------------------------------------------------
+
+-- Functions
+--// Find player from name (or display name)
+function find_player(name: string, display: bool?): (Player?)
+	for _, player in next, players:GetPlayers() do
+		if string.lower(name) == string.lower(string.sub(player[(display and 'DisplayName' or 'Name')], 1, string.len(name))) then
+			return player
+		end
+	end
+	
+	if getgenv().supernova['display_fallback'] and not display then
+		return find_player(name, true)
+	end
+	
+	return nil
+end
+
+--// Move a part and gain its net (should be in a loop)
+function move_part(part, new)
+	if not part or part.ReceiveAge ~= 0 then
+		return
+	end
+	
+	part.Velocity = Vector3.new(vis.velocity, vis.velocity, vis.velocity)
+	part.CanCollide = false
+	part.Anchored = true
+	part.CFrame = part.CFrame:Lerp(new, 0.2)
+	task.wait()
+	part.Anchored = false
+end
+
+--// Get X and Z (or Y) point from angle and radius
+function getxz(angle: number, radius: number): (number, number)
+	local x = math.cos(angle) * radius
+	local z = math.sin(angle) * radius
+	
+	return x, z
+end
+
+--// Cache a log into a file
+function log_file(content: string): ()
+	coroutine.wrap(function() -- Run on a new thread
+		if not isfolder('Supernova') then
+			makefolder('Supernova')
+			repeat task.wait() until isfolder('Supernova')
+		end
+		
+		if not isfile('Supernova/cache.txt') then
+			writefile('Supernova/cache.txt', '')
+			repeat task.wait() until isfile('Supernova/cache.txt')
+		end
+		
+		appendfile('Supernova/cache.txt', content .. '\n')
+		print(content)
+	end)()
+end
+
+--// Log a message into the log stream
+function log(content: string, color: Color3?): ()
+	if suppressed then
+		return
+	end
+	
+	starter_gui:SetCore(
+		'ChatMakeSystemMessage',
+		{
+			Text = '[SN]: ' .. content,
+			Color = color or Color3.new(1, 1, 1)
+	})
+end
+
+--// Same as log() but with a green accent
+ok = function(content: string) log(content, Color3.new(0, 1, 0)) end
+
+--// Same as log() but with a yellow accent
+warning = function(content: string) log(content, Color3.new(1, 1, 0)) end
+
+--// Same as log() but with a red accent. usually called by a player error
+error = function(content: string) log('Error: ' .. content, Color3.new(1, 0, 0)) end
+
+--// Same as error() but gets cached. usually called by a script error
+script_error = function(content: string) log('Script error: ' .. content, Color3.new(1, 0, 0)); log_file('[Script error]: ' .. content) end
+
+--// Suppresses chat-based logs until unsuppressed
+function suppress(): ()
+	suppressed = true
+end
+
+--// Unsuppresses chat-based logs until suppressed
+function unsuppress(): ()
+	suppressed = false
+end
+
+--// Chat something
+function chat(msg: string): ()
+	local text = chatbar.Text
+	
+	chatbar:SetTextFromInput(msg)
+	players:Chat(msg)
+	chatbar:SetTextFromInput(text)
+end
+
+--// Same as chat() but with a varadic template
+function multi_chat(...): ()
+	for _, v in ipairs({...}) do
+		chat(v)
+	end
+end
+
+--// Checks if the local player owns a gamepass id
+function owns_gamepass(id: number): (bool)
+	local success, result = pcall(
+		marketplace_service.UserOwnsGamePassAsync,
+		marketplace_service,
+		lp.UserId,
+		id
+	)
+	
+	if not success then
+		result = false
+	end
+	
+	return result
+end
+
+--// Checks if other players have a gamepass (probably would be better if i just rewrote owns_gampeass() but idc)
+function has_gamepass(player_id: number, id: number): (bool)
+	local data = game:HttpGet("https://inventory.roblox.com/v1/users/" .. player_id .. "/items/GamePass/" .. id)
+	local yes = false
+	
+	if string.match(data, tostring(id)) then
+		yes = true
+	end
+	
+	return yes
+end
+
+--// Send a PM to a player
+function pm(player: string, message: string): ()
+	if supernova.personns then
+		chat('pm/' .. player .. '/' .. message)
+	else
+		chat('pm ' .. player .. ' ' .. message)
+	end
+end
+
+--// Synctatic sugar means what
+function ungear(player: string, message: string?): ()
+	if supernova.personns then
+		chat('ungear/' .. (message or '') .. string.rep(' ', 150) .. player)
+	else
+		chat('ungear ' .. (message or '') .. string.rep(' ', 150) .. player)
+	end
+end
+
+--// Execute commands without chatting them
+function execute(command: string, args: string?): ()
+	for key, value in next, commands do
+		if
+			string.lower(command) == string.lower(key)
+			or value.alias
+			and table.find(value.alias, command:lower())
+		then
+			value.command(args)
+		end
+	end
+end
+
+--// Prepare workspace (for rkick, attach etc)
+function prepare_workspace(): ()
+    workspace.Gravity = 0
+    
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v.ClassName == "Part" then
+            v.CanCollide = false
+        end
+    end
+end
+
+--// Finish workspace after calling prepare_workspace()
+function finish_workspace()
+    workspace.Gravity = 196.19999
+    
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v.ClassName == "Part" then
+            v.CanCollide = true
+        end
+    end
+end
+
+--// Attach (from scv1 lol)
+function attach(target: Instance): ()
+	prepare_workspace()
+	
+	local cf = lp.Character.HumanoidRootPart
+	local looping = true
+	
+	pcall(function()
+		coroutine.wrap(function()
+			while looping do
+				task.wait()
+				lp.Character['Humanoid']:ChangeState(11)
+				cf.CFrame = target.CFrame * CFrame.new(-1*(target.Size.X/2)-(lp.Character['Torso'].Size.X/2), 0, 0)
+			end
+		end)()
+		
+		coroutine.wrap(function() while looping do task.wait(.095) chat('unpunish me') end end)()
+		task.wait(0.1)
+		looping = false
+	end)
+	
+	finish_workspace()
+end
+
+--// SILENCE!!!
+function silence(func)
+	if type(func) ~= 'function' then
+		return nil
+	end
+	
+	return function()
+		suppress()
+		func()
+		unsuppress()
+	end
+end
+
+------------------------------------------------------------------------
+--
+-- Commands
+--
+------------------------------------------------------------------------
+
+-- Commands
+commands = {
+	['exit'] = {
+		description = 'Exit the script and close connections',
+		command = function()
+			table.foreach(threads, function(_, v)
+				v:Disconnect()
+			end)
+			
+			warning('Disconnected script')
+		end,
+		alias = {'dc', 'disconnect'}
+	},
+	['toggle'] = {
+		description = 'Forcibly toggle a variable',
+		command = function(to_toggle)
+			local args = string.split(to_toggle, ' ')
+			
+			local name = args[1]
+			local value = args[2]
+			
+			if not name then
+				error('toggle: no name provided')
+				return
+			end
+			
+			if active[name:lower()] == nil then
+				error('toggle: no state found')
+				return
+			end
+			
+			if not value then
+				value = (active[name:lower()] and 'off' or 'on')
+			end
+			
+			active[name:lower()] = ((value == 'on') and true or false)
+			log(
+				string.upper(
+					string.sub(name, 1, 1)
+				)
+				.. string.sub(string.lower(name), 2)
+				.. ': '
+				.. tostring(active[name:lower()])
+				, active[name:lower()] and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
+			)
+		end,
+		alias = {'tg'}
+	},
+	['whitelist'] = {
+		description = 'Whitelist someone',
+		command = function(plr)
+			local p = find_player(plr)
+			
+			if not p then
+				error('whitelist: no player found')
+				return
+			end
+			
+			if
+				table.find(supernova.whitelist, p.Name)
+				or p.UserId == lp.UserId
+			then
+				error('whitelist: ' .. p.Name .. ' is already whitelisted')
+				return
+			end
+			
+			table.insert(supernova.whitelist, p.Name)
+			ok('Whitelisted ' .. p.Name)
+			pm(p.Name, 'You have been whitelisted!')
+		end,
+		alias = {'wl'}
+	},
+	['unwhitelist'] = {
+		description = 'Unwhitelist someone',
+		command = function(plr)
+			local p = find_player(plr)
+			
+			if not p then
+				error('unwhitelist: no player found')
+				return
+			end
+			
+			if not table.find(supernova.whitelist, p.Name) then
+				error('unwhitelist: ' .. p.Name .. ' is not whitelisted')
+				return
+			end
+			
+			table.remove(supernova.whitelist, table.find(supernova.whitelist, p.Name))
+			warning('Unwhitelisted ' .. p.Name)
+			pm(p.Name, 'You have been unwhitelisted')
+		end,
+		alias = {'unwl'}
+	},
+	['blgwhitelist'] = {
+		description = 'Blgwhitelist someone',
+		command = function(plr)
+			local p = find_player(plr)
+			
+			if not p then
+				error('blgwhitelist: no player found')
+				return
+			end
+			
+			if
+				table.find(supernova.blgwhitelist, p.Name)
+				or p.UserId == lp.UserId
+			then
+				error('blgwhitelist: ' .. p.Name .. ' is already blgwhitelisted')
+				return
+			end
+			
+			table.insert(supernova.blgwhitelist, p.Name)
+			ok('Blgwhitelisted ' .. p.Name)
+		end,
+		alias = {'blgwl'}
+	},
+	['unblgwhitelist'] = {
+		description = 'Unblgwhitelist someone',
+		command = function(plr)
+			local p = find_player(plr)
+			
+			if not p then
+				error('unblgwhitelist: no player found')
+				return
+			end
+			
+			if not table.find(supernova.blgwhitelist, p.Name) then
+				error('unblgwhitelsit: ' .. p.Name .. ' is not blgwhitelisted')
+				return
+			end
+			
+			table.remove(supernova.blgwhitelist, table.find(supernova.blgwhitelist, p.Name))
+			warning('Unblgwhitelisted ' .. p.Name)
+		end,
+		alias = {'unblgwl'}
+	},
+	['blacklist'] = {
+		description = 'Blacklist someone',
+		command = function(plr)
+			local p = find_player(plr)
+			
+			if not p then
+				error('blacklist: no player found')
+				return
+			end
+			
+			if
+				table.find(supernova.blacklist, p.Name)
+			then
+				error('blacklist: ' .. p.Name .. ' is already blacklisted')
+				return
+			end
+			
+			chat('respawn ' .. p.Name)
+			chat('skydive ' .. p.Name)
+			chat('punish '  .. p.Name)
+			pm(p.Name, 'You have been blacklisted!')
+			
+			table.insert(supernova.blacklist, p.Name)
+			ok('Blacklisted ' .. p.Name)
+		end,
+		alias = {'bl'}
+	},
+	['unblacklist'] = {
+		description = 'Unblacklist someone',
+		command = function(plr)
+			local p = find_player(plr)
+			
+			if not p then
+				error('unblacklist: no player found')
+				return
+			end
+			
+			if not table.find(supernova.blacklist, p.Name) then
+				error('unblacklist: ' .. p.Name .. ' is not blacklisted')
+				return
+			end
+			
+			table.remove(supernova.blacklist, table.find(supernova.blacklist, p.Name))
+			warning('Unblacklisted ' .. p.Name)
+			chat('respawn ' .. p.Name)
+		end,
+		alias = {'unbl'}
+	},
+	['addblgear'] = {
+		description = 'Add a gear to the blacklist',
+		command = function(r)
+			if r == '.' then
+				local tool = lp.Character:FindFirstChildWhichIsA('Tool')
+				
+				if not tool then
+					error('addblgear: no gear equipped')
+					return
+				end
+				
+				table.insert(supernova.blgears, tool.Name)
+				ok('Added gear to blacklist: ' .. tool.Name)
+			else
+				table.insert(supernova.blgears, r)
+				ok('Added gear to blacklist: ' .. r)
+			end
+		end
+	},
+	['rmblgear'] = {
+		description = 'Remove a gear from the blacklist',
+		command = function(r)
+			if r == '.' then
+				local tool = lp.Character:FindFirstChildWhichIsA('Tool')
+				
+				if not tool then
+					error('rmblgear: no gear equipped')
+					return
+				end
+				
+				table.remove(supernova.blgears, table.find(supernova.blgears, tool.Name))
+				warning('Removed gear from blacklist: ' .. tool.Name)
+			else
+				if not table.find(supernova.blgears, r) then
+					error('rmblgear: no gear found')
+				end
+				
+				table.remove(supernova.blgears, table.find(supernova.blgears, r))
+				warning('Removed gear from blacklist: ' .. r)
+			end
+		end
+	},
+	['listblgears'] = {
+		description = 'List blacklisted gears',
+		command = function()
+			log('Blacklisted gears: ', Color3.new(0, 1, 0))
+			for _, gear in next, supernova.blgears do
+				warning(gear)
+			end
+		end
+	},
+	['antifling'] = {
+		description = 'Toggles this anti on/off',
+		command = function(r)
+			execute('toggle', 'antifling '..(r or ''))
+		end
+	},
+	['antisgv'] = {
+		description = 'Toggles this anti on/off',
+		command = function(r)
+			execute('toggle', 'antisgv '..(r or ''))
+		end
+	},
+	['antidog'] = {
+		description = 'Toggles this anti on/off',
+		command = function(r)
+			execute('toggle', 'antidog '..(r or ''))
+		end
+	},
+	['antirk'] = {
+		description = 'Toggles this anti on/off',
+		command = function(r)
+			execute('toggle', 'ark '..(r or ''))
+		end
+	},
+	['antikill'] = {
+		description = 'Toggles this anti on/off',
+		command = function(r)
+			execute('toggle', 'antikill '..(r or ''))
+		end
+	},
+	['antipunish'] = {
+		description = 'Toggles this anti on/off',
+		command = function(r)
+			execute('toggle', 'antipunish '..(r or ''))
+		end
+	},
+	['antijail'] = {
+		description = 'Toggles this anti on/off',
+		command = function(r)
+			execute('toggle', 'antijail '..(r or ''))
+		end
+	},
+	['antifreeze'] = {
+		description = 'Toggles this anti on/off',
+		command = function(r)
+			execute('toggle', 'antifreeze '..(r or ''))
+		end
+	},
+	['blgears'] = {
+		description = 'Toggles this anti on/off',
+		command = function(r)
+			execute('toggle', 'blgears '..(r or ''))
+		end
+	},
+	['allantis'] = {
+		description = 'Turn on all good antis',
+		command = function()
+			suppress()
+			
+			active.antifling = true
+			active.antijail = true
+			active.antipunish = true
+			active.antifreeze = true
+			active.antikill = true
+			active.antisgv = true
+			active.blgears = true
+			
+			unsuppress()
+			
+			ok('Turned on all antis')
+		end
+	},
+	['noantis'] = {
+		description = 'Turn off all antis',
+		command = function()
+			suppress()
+			
+			active.antifling = false
+			active.antijail = false
+			active.antipunish = false
+			active.antifreeze = false
+			active.antikill = false
+			active.antisgv = false
+			active.blgears = false
+			
+			unsuppress()
+			
+			warning('Turned off all antis')
+		end
+	},
+	['commands'] = {
+		description = 'Shows this list',
+		command = function()
+			print(string.rep('-', 64))
+			print('[Supernova] Available commands: ')
+			print(string.rep('-', 64))
+			
+			local i = 1
+			for k, v in next, commands do
+				print('[' .. i .. '] ' .. supernova.prefix .. string.upper(k) .. ': ' .. (v.description or 'No description provided'))
+				i += 1
+			end
+			
+			print(string.rep('-', 64))
+			ok('Press F9 or say /console to view commands')
+		end,
+		alias = {'cmds', 'viewcmds'}
+	},
+	['shop'] = {
+		description = 'Find a new server',
+		command = function()
+			local servers = game:GetService("HttpService"):JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100"))
+			for _, s in pairs(servers.data) do
+				if s.playing ~= s.maxPlayers and s.id ~= game.JobId then
+					ok("Joining a server with "..tostring(s.playing).." players...")
+					game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, s.id)
+					break
+				end
+			end
+		end,
+		alias = {'hop'}
+	},
+	['rejoin'] = {
+		description = 'Rejoin the server',
+		command = function()
+			game:GetService('TeleportService'):TeleportToPlaceInstance(game.PlaceId, game.JobId)
+		end,
+		alias = {'rej', 'rj'}
+	},
+	['fixcam'] = {
+		description = 'Fix camera from weapon system',
+		command = function()
+			-- Unbind
+			run_service:UnbindFromRenderStep('ShoulderCameraUpdate')
+			
+			cxa_service:UnbindAction('ShoulderCameraZoom')
+			cxa_service:UnbindAction('ShoulderCameraSprint')
+			
+			-- Disable and remove stuff
+			local ws = game:GetService('ReplicatedStorage'):FindFirstChild('WeaponsSystem')
+			if not ws then
+				return
+			end
+			
+			for _, v in next, ws:GetDescendants() do
+				if v:IsA('Script') then
+					v.Disabled = true
+				end
+				v:Destroy()
+			end
+			
+			local wep = lp.PlayerGui:FindFirstChild('ClientWeaponsScript')
+			local gui = lp.PlayerGui:FindFirstChild('WeaponsSystemGui')
+			local sc = lp.PlayerScripts:FindFirstChild('ClientWeaponsScript')
+			
+			if wep then
+				wep.Disabled = true
+				wep:Destroy()
+			end
+			
+			if sc then
+				sc.Disabled = true
+				sc:Destroy()
+			end
+			
+			if gui then
+				gui:Destroy()
+			end
+			
+			game:GetService('UserInputService').MouseIconEnabled = true
+			
+			workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+			workspace.CurrentCamera.CameraSubject = lp.Character:WaitForChild('Humanoid', 15)
+			
+			lp.Character.Humanoid.AutoRotate = true
+		end
+	},
+	['lua'] = {
+		description = 'Execute lua from input',
+		command = function(r)
+			listening = true
+			
+			local s, t = pcall(function()
+				loadstring(r)()
+				print('%finished')
+			end)
+			
+			if not s then
+				log(t, Color3.new(1, 0, 0))
+				listening = false
+			end
+		end
+	},
+	['no3drender'] = {
+		description = 'Disable 3d rendering',
+		command = function()
+			game:GetService("RunService"):Set3dRenderingEnabled(false)
+		end
+	},
+	['3drender'] = {
+		description = 'Enable 3d rendering',
+		command = function()
+			game:GetService("RunService"):Set3dRenderingEnabled(true)
+		end
+	},
+	['getpad'] = {
+		description = 'Get a pad',
+		command = function()
+			if not firetouchinterest then
+				script_error("[getpad]: your executor is missing the firetouchinterest() function")
+				return
+			end
+			
+			if not pads then
+				script_error("[getpad]: pads couldn't be found")
+				return
+			end
+			
+			if pads:FindFirstChild(lp.Name.."'s admin") then
+				return
+			end
+			
+			local free = pads:FindFirstChild('Touch to get admin')
+			
+			if free then
+				
+				coroutine.wrap(function()
+					firetouchinterest(lp.Character:WaitForChild("Head"), free.Head, 0)
+					firetouchinterest(lp.Character:WaitForChild("Head"), free.Head, 1)
+				end)()
+			else
+				
+				if regen then
+					fireclickdetector(regen.ClickDetector, 0)
+					
+					local strike = 0
+					repeat task.wait(); strike += 1 until pads:FindFirstChild("Touch to get admin") or strike >= 300
+					
+					if strike >= 180 then
+						script_error("[getpad]: couldn't get a pad because none is left and strike was hit")
+						return
+					end
+					
+					coroutine.wrap(function()
+						local pad = pads:FindFirstChild("Touch to get admin")
+						firetouchinterest(lp.Character:WaitForChild("Head"), pad.Head, 0)
+						firetouchinterest(lp.Character:WaitForChild("Head"), pad.Head, 1)
+					end)()
+				else
+					script_error("[getpad]: couldn't get a pad because none is left and regen couldn't be found")
+					return
+				end
+			end
+		end
+	},
+	['perm'] = {
+		description = 'Enable free perm',
+		command = function()
+			if not firetouchinterest then
+				script_error("[getpad]: your executor is missing the firetouchinterest() function")
+				return
+			elseif not pads then
+				script_error("[getpad]: pads couldn't be found")
+				return
+			end
+			
+			execute('toggle', 'perm')
+		end
+	},
+	['loopgrab'] = {
+		description = 'Auto-grab all pads',
+		command = function()
+			if not firetouchinterest then
+				script_error("[getpad]: your executor is missing the firetouchinterest() function")
+				return
+			elseif not pads then
+				script_error("[getpad]: pads couldn't be found")
+				return
+			end
+			
+			execute('toggle', 'loopgrab')
+		end,
+		alias = {'lg'}
+	},
+	['rok'] = {
+		description = 'RemoveObbyKill (v2)',
+		command = function()
+			for _, v in pairs(_game.Workspace.Obby:GetChildren()) do
+				local ti = v:FindFirstChild('TouchInterest')
+				if ti then
+					ti:Destroy()
+				end
+				v.CanTouch = false
+			end
+		end,
+		alias = {'nok'}
+	},
+	['firecd'] = {
+		description = 'Fire click detector on regen',
+		command = function()
+			if regen then
+				fireclickdetector(regen.ClickDetector, 0)
+			end
+		end,
+		alias = {'reg', 'fire'}
+	},
+	['scol'] = {
+		description = 'Switch obby box collisions',
+		command = function()
+			local box = _game.Workspace:FindFirstChild("Obby Box")
+		
+			if not box then
+				error("scol: obby box not found")
+				return
+			end
+			
+			for _, v in pairs(box:GetChildren()) do
+				v.CanCollide = not v.CanCollide
+			end
+			
+			ok('Switched obby wall collisions')
+		end
+	},
+	['house'] = {
+		description = 'Teleports you to the house',
+		command = function()
+			lp.Character:MoveTo(Vector3.new(-28.6829948, 8.2299995, 66.4913253))
+		end,
+		alias = {'th', 'tohouse'}
+	},
+	['regen'] = {
+		description = 'Teleports you to the regen',
+		command = function()
+			if not regen then
+				error('regen: no regen found')
+				return
+			end
+			
+			lp.Character:MoveTo(regen.Position + Vector3.new(0, 5, 0))
+		end,
+		alias = {'tr'}
+	},
+	['vgcrash'] = {
+		description = 'Crash using VampireVanquisher',
+		command = function()
+			chat('gear me '..string.rep('0',500)..'94794847')
+			repeat task.wait() until lp.Backpack:FindFirstChild('VampireVanquisher')
+			lp.Character:WaitForChild('Humanoid'):EquipTool(lp.Backpack:FindFirstChild('VampireVanquisher'))
+			repeat task.wait() until lp.Character:FindFirstChild('VampireVanquisher')
+			for i = 1, 5 do chat('undog me me me') end
+		end,
+		alias = {'vgc'}
+	},
+	['qcrash'] = {
+		description = 'Quick crash',
+		command = function()
+			task.wait(.2)
+			warning('Warning: experimental crash')
+			for i = 1, 1750 do
+				chat('freeze all all all')
+				chat('clone all all all')
+				chat('removeclones')
+			end
+		end,
+		alias = {'fcrash', 'silcrash'}
+	},
+	['rkick'] = {
+		description = 'Rocket-kick a player',
+		command = function(r)
+			if not supernova.personns then
+				error('rkick: you need personns admin for this command')
+				return
+			end
+			
+			if rkick.active and r == '' then
+				rkick.active = false
+				rkick.target = ''
+				rkick.time = 0
+				warning('Stopped rkick')
+				chat('unrocket/me')
+				return
+			end
+			
+			local plr = find_player(r)
+			if not plr then
+				error('rkick: no player found')
+				return
+			end
+			
+			rkick.target = plr.Name
+			rkick.time = tick()
+			rkick.active = true
+			active.ark = true
+			
+			chat('respawn ' .. plr.Name)
+			task.wait(0.5)
+			
+			chat('speed ' .. plr.Name .. '-')
+			chat('ff ' .. plr.Name)
+			chat('name ' .. plr.Name .. [[ ROCKET KICKING
+ROCKET KICKING
+ROCKET KICKING]])
+			
+			ok('Rocket-kicking ' .. rkick.target)
+			
+			local j = 0
+			coroutine.wrap(function()
+				while
+					rkick.active
+					and threads['PreRender']
+				do
+					if plr.Character:FindFirstChild('HumanoidRootPart') and lp.Character:FindFirstChild('HumanoidRootPart') then
+						lp.Character.HumanoidRootPart.CFrame = plr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 1.85) * CFrame.fromEulerAnglesXYZ(0, math.rad(180+j), 0)
+					end
+					
+					coroutine.wrap(function()
+						chat('rocket/'..string.rep('me/',50))
+						task.wait()
+						chat('rocket/'..string.rep(plr.Name..'/',50))
+						task.wait()
+					end)()
+					
+					j += 1.25
+					if j >= 20 then j*=-1 end
+					task.wait()
+				end
+			end)()
+		end
+	},
+	['fixvelocity'] = {
+		description = 'Fix velocity of an instance you click on',
+		command = function()
+			silence(function()
+				execute('toggle', 'fixvel')
+			end)()
+			
+			warning('Waiting for input')
+		end,
+		alias = {'fixvel'}
+	},
+	['attach'] = {
+		description = 'Use the SCv1 attach on whatever you click on',
+		command = function()
+			silence(function()
+				execute('toggle', 'attach')
+			end)()
+			
+			warning('Waiting for input')
+		end
+	},
+	['spam'] = {
+		description = 'Repeat a command until unspam is ran',
+		command = function(r)
+			if spam.active then
+				if r == '' then
+					spam.active = false
+					spam.cmds = {}
+					warning('Spam stopped')
+					return
+				end
+				
+				table.insert(spam.cmds, r)
+				return
+			end
+			
+			spam.active = true
+			spam.cmds = {r}
+			
+			coroutine.wrap(function()
+				while
+					spam.active
+					and threads['PreRender']
+				do
+					if #spam.cmds > 1 then
+						for _, v in next, spam.cmds do
+							chat(v)
+							task.wait()
+						end
+					else
+						chat(spam.cmds[1])
+						task.wait()
+					end
+				end
+			end)()
+		end,
+		alias = {'s'}
+	},
+	['unspam'] = {
+		description = 'Stop spamming',
+		command = function()
+			if spam.active then
+				spam.active = false
+				spam.cmds = {}
+				warning('Stopped spam')
+				return
+			end
+		end
+	},
+	['vis'] = {
+		description = 'Creates the visualizer',
+		command = function()
+			if vis.active or vis.queue then
+				error('Say ' .. supernova.prefix .. 'devis to destroy the visualizer')
+				return
+			end
+			
+			log_file('[vis]: creating vis')
+			
+			vis.active = false
+			vis.queue = true
+			
+			local padding = '.'
+			local found = false
+			
+			for _, v in pairs(string.split(string.split(vis.size, '/')[3], '')) do
+				if v == '.' then
+					found = true
+					break
+				end
+			end
+			
+			if found then
+				padding = ''
+			end
+			
+			padding ..= '021'
+			
+			for i = 1, vis.amount do
+				chat('part/' .. vis.size .. padding)
+				task.wait(0.0005)
+			end
+			
+			chat('gear me 18474459')
+		end
+	},
+	['revis'] = {
+		description = 'Refresh visualizer',
+		command = function()
+			if vis.debounce then return end
+			
+			vis.debounce = true
+			log_file('[vis]: recreating vis')
+			
+			vis.active = false
+			vis.queue = true
+			vis.parts = {}
+			
+			local padding = '.'
+			local found = false
+			
+			for _, v in pairs(string.split(string.split(vis.size, '/')[3], '')) do
+				if v == '.' then
+					found = true
+					break
+				end
+			end
+			
+			if found then
+				padding = ''
+			end
+			
+			padding ..= '021'
+			
+			for i = 1, vis.amount do
+				chat('part/' .. vis.size .. padding)
+				task.wait(0.0005)
+			end
+			
+			if #vis.parts == vis.amount then
+				vis.queue = false
+				vis.active = true
+			end
+			
+			vis.debounce = false
+		end
+	},
+	['devis'] = {
+		description = 'Destroy visualizer',
+		command = function()
+			if
+				not vis.active
+			then
+				return
+			end
+			
+			log_file('[vis]: destroying vis')
+			
+			vis.active = false
+			vis.queue = false
+			vis.parts = {}
+		end
+	},
+	['visadd'] = {
+		description = 'Add a next vis',
+		command = function(r)
+					end
+	},
+	['rbarmlag'] = {
+		description = 'Lag using roboarm',
+		command = function()
+			for i = 1, 250 do
+				chat('gear me '..string.rep("0",500)..'35366215')
+				task.wait()
+			end
+			
+			task.wait(0.75)
+			for _, v in pairs(lp.Backpack:GetChildren()) do
+				v.Parent = lp.Character
+			end
+			
+			task.wait(0.75)
+			for _, v in pairs(lp.Character:GetChildren()) do
+				if v:IsA("Tool") then v:Activate() end
+			end
+		end
+	},
+	['sethh'] = {
+		description = 'Set hip height',
+		command = function(r)
+			if not tonumber(r) then
+				error('sethh: not a number')
+				return
+			end
+			
+			lp.Character:WaitForChild('Humanoid', 15).HipHeight = tonumber(r)
+		end
+	},
+	['gtools'] = {
+		description = 'Get tool names of player',
+		command = function(r)
+			local plr = find_player(r)
+			if not plr then
+				error('gtools: no player found')
+				return
+			end
+			
+			local tools = 'Tools of '..plr.Name..': '
+			table.foreach(plr.Backpack:GetChildren(), function(_, i) 
+				tools ..= i.Name..', '
+			end)
+			
+			table.foreach(plr.Character:GetChildren(), function(_, i)
+				if i:IsA('Tool') then
+					tools ..= i.Name..', '
+				end
+			end)
+			
+			ok(tools)
+		end
+	},
+	['float'] = {
+		description = 'Floats your tools',
+		command = function()
+			active.sbx = false
+			
+			for l, v in next, lp.Backpack:GetChildren() do
+				v.Parent = lp.Character
+				local angle = l * ((2 * math.pi) / #lp.Backpack:GetChildren())
+				local x, z = getxz(angle, 8)
+				local cframe = CFrame.new(x, 0, z).p
+				v.GripPos = cframe
+			end
+			
+			local tool = lp.Character:FindFirstChildWhichIsA("Tool")
+			tool:GetPropertyChangedSignal("Parent"):Connect(function()
+				if not tool or tool.Parent == nil or tool.Parent ~= lp.Character then
+					active.sbx = false
+				end
+			end)
+			
+			active.sbx = true
+		end
+	},
+	['repeat'] = {
+		description = 'Repeat a command 200 times or n times',
+		command = function(r)
+			local split = string.split(r, "|")
+			local args = {}
+			
+			for _, a in pairs(split) do
+				local t = string.gsub(a, '^%s*(.-)%s*$', '%1')
+				table.insert(args, t)
+			end
+			
+			if #args == 1 then
+				for i = 1, 200 do
+					chat(args[1])
+				end
+			elseif #args == 2 then
+				if not tonumber(args[2]) then error("spam: malformed number"); return end
+				for i = 1, tonumber(args[2]) do
+					chat(args[1])
+				end
+			else
+				error("spam: unsupported argument count for repeat")
+				return
+			end
+		end,
+		alias = {'rep'}
+	},
+	['visspeed'] = {
+		description = 'Sets visualizer speed',
+		command = function(r)
+			if not tonumber(r) then
+				error('visspeed: nan')
+				return
+			end
+			
+			vis.speed = tonumber(r)
+			ok('Set visualizer speed to ' .. r)
+		end,
+		alias = {'vissp'}
+	},
+	['vissize'] = {
+		description = 'Sets visualizer size',
+		command = function(r)
+			if #string.split(r, '/') ~= 3 then
+				error('vissize: not x/y/z')
+				return
+			end
+			
+			vis.size = r
+			ok('Set visualizer size to ' .. r)
+		end,
+		alias = {'vissz'}
+	},
+	['visvelocity'] = {
+		description = 'Sets visualizer velocity',
+		command = function(r)
+			if not tonumber(r) then
+				error('visvelocity: nan')
+				return
+			end
+			
+			vis.velocity = tonumber(r)
+			ok('Set visualizer velocity to ' .. r)
+		end,
+		alias = {'visvel'}
+	},
+	['visorbiter'] = {
+		description = 'Sets visualizer orbiter',
+		command = function(r)
+			if not find_player(r) then
+				error('visorbiter: no player found')
+				return
+			end
+			
+			vis.orbiter = find_player(r)
+			ok('Set visualizer orbiter to ' .. r)
+		end,
+		alias = {'visorb'}
+	},
+	['vismode'] = {
+		description = 'Sets visualizer mode',
+		command = function(r)
+			if not tonumber(r) then
+				error('vismode: nan')
+				return
+			end
+			
+			vis.mode = tonumber(r)
+			ok('Set visualizer mode to ' .. r)
+		end,
+		alias = {'vism'}
+	},
+	['vispaint'] = {
+		description = 'Sets visualizer paint',
+		command = function(r)
+			vis.paint = r
+			ok('Set visualizer paint to ' .. r)
+		end,
+		alias = {}
+	},
+	['visamount'] = {
+		description = 'Sets visualizer amount',
+		command = function(r)
+			if not tonumber(r) then
+				error('visamount: nan')
+				return
+			end
+			
+			vis.amount = tonumber(r)
+			ok('Set visualizer amount to ' .. r)
+		end,
+		alias = {'visamt'}
+	},
+	['visradius'] = {
+		description = 'Sets visualizer amount',
+		command = function(r)
+			if not tonumber(r) then
+				error('visradius: nan')
+				return
+			end
+			
+			vis.radius = tonumber(r)
+			ok('Set visualizer radius to ' .. r)
+		end,
+		alias = {'visrad'}
+	},
+	['vissens'] = {
+		description = 'Sets visualizer amount',
+		command = function(r)
+			if not tonumber(r) then
+				error('vissens: nan')
+				return
+			end
+			
+			vis.sensitivity = tonumber(r)
+			ok('Set visualizer sensitivity to ' .. r)
+		end,
+		alias = {}
+	},
+	['vissolid'] = {
+		description = 'Sets visualizer solid color (for solid paint mode)',
+		command = function(r)
+			if #string.split(r, ' ') ~= 3 then
+				error('vissolid: r g b')
+				return
+			end
+			
+			vis.solid = Color3.fromRGB(
+				tonumber(string.split(r, ' ')[1]) or 0,
+				tonumber(string.split(r, ' ')[2]) or 0,
+				tonumber(string.split(r, ' ')[3]) or 0
+			)
+			
+			ok('Set visualizer solid color to ' .. r)
+		end,
+		alias = {'vissc'}
+	},
+	['clearcache'] = {
+		description = 'Automatically called but can also be called manually',
+		command = function()
+			if not isfolder('Supernova') then
+				error('clearcache: no cache found')
+				return
+			end
+			
+			if not isfile('Supernova/cache.txt') then
+				error('clearcache: no cache found')
+				return
+			end
+			
+			local lines = string.split(readfile('Supernova/cache.txt'), '\n')
+			local json = game:GetService("HttpService"):JSONEncode(lines)
+
+			writefile('Supernova/cache.txt', '')
+			ok(string.format('Cleared cache of %.2f kb', (#json/1024)))
+		end
+	},
+
+
+       
+       
+        
+            
+
+	['vaporwave'] = {
+		description = 'Transform the world into vaporwave',
+		command = function()
+			multi_chat(
+				'fix',
+				'colorshifttop 102 21 1221',
+				'ambient 999 99 9',
+				'fogend 100',
+				'fogcolor 102 21 1221',
+				'time 6.9',
+				'colorshiftbottom 102 21 1221'
+			)
+		end
+	},
+	['hookms'] = {
+		description = 'Hook music and prevent its change',
+		command = function()
+			if not _game.Folder:FindFirstChild('Sound') then
+				error('hookms: no sound playing')
+				return
+			end
+			
+			local id = string.split(_game.Folder:FindFirstChild('Sound').SoundId, 'http://www.roblox.com/asset/?id=')[2]
+			
+			log_file('[hookms]: hooking for ' .. id)
+			hookms.id = id
+			hookms.active = true
+			
+			ok('Hooking id: ' .. id)
+		end
+	},
+	['unhookms'] = {
+		description = 'Remove hook from music',
+		command = function()
+			hookms.active = false
+			warning('Unhooked')
+		end
+	},
+	['isperm'] = {
+		description = 'Check if someone is perm',
+		command = function(r)
+			local plr = find_player(r)
+			if not plr then
+				error('isperm: no player found')
+				return
+			end
+			
+			local owned = has_gamepass(plr.Id, 66254)
+			log(owned and 'Player is perm' or 'Player is not perm', owned and Color3.new(0, 1, 0) or Color3.new(1, 0, 0))
+		end
+	}
+}
+
+------------------------------------------------------------------------
+--
+-- Loader
+--
+------------------------------------------------------------------------
+
+-- // Loader (contains patch(plr) for .Chatted and attach_dispatcher(plr) for other events)
+local function patch(player: Player): ()
+	threads[player.Name .. ' Chatted'] = player.Chatted:Connect(function(msg)
+		if
+			not table.find(supernova.whitelist, player.Name)
+			and player.UserId ~= lp.UserId
+			or string.sub(msg, 1, string.len(supernova.prefix)) ~= supernova.prefix
+		then
+			return
+		end
+		
+		local args = string.split(msg, " ")
+		local cmd = string.sub(args[1], string.len(supernova.prefix)+1)
+		local rest = string.sub(msg, string.len(cmd)+string.len(supernova.prefix)+2)
+		
+		for k, v in pairs(commands) do
+			if
+				k == cmd:lower()
+				or v.alias
+				and table.find(v.alias, cmd:lower())
+			then
+				v.command(rest)
+			end
+		end
+	end)
+end
+
+local function attach_dispatcher(player: Player): ()
+	if not player.Character then return end
+	
+	-- Check if player is blacklisted
+	if table.find(supernova.blacklist, player.Name) then
+		chat('respawn ' .. player.Name)
+		chat('skydive ' .. player.Name)
+		chat('punish '  .. player.Name)
+		pm(player.Name, 'You have been blacklisted!')
+	end
+	
+	-- Show usernames under display names
+	local humanoid = player.Character:WaitForChild("Humanoid")
+	humanoid.DisplayName = ("%s\n(@%s)"):format(player.DisplayName, player.Name)
+	humanoid.NameOcclusion = 0
+	
+	--/ All of the antis
+	do
+		threads[player.Name .. ' Died'] = player.Character:WaitForChild('Humanoid', 10).Died:Connect(function()
+			if not active.antikill then return end
+			if
+				table.find(supernova.whitelist, player.Name)
+				or player.UserId == lp.UserId
+			then
+				chat('refresh ' .. player.Name)
+				chat('god ' .. player.Name)
+			end
+		end)
+		
+		threads[player.Name .. ' Character Parent Changed'] = player.Character:GetPropertyChangedSignal('Parent'):Connect(function()
+			-- Check if player is blacklisted
+			if
+				table.find(supernova.blacklist, player.Name)
+				and player.Character.Parent ~= game.Lighting
+			then
+				chat('respawn ' .. p.Name)
+				chat('skydive ' .. p.Name)
+				chat('punish '  .. p.Name)
+				pm(p.Name, 'You have been blacklisted!')
+			end
+	
+			if
+				table.find(supernova.whitelist, player.Name)
+				and active.antipunish
+				and player.Character.Parent == game.Lighting
+				or player.UserId == lp.UserId
+				and active.antipunish
+				and player.Character.Parent == game.Lighting
+			then
+				chat('unpunish ' .. player.Name)
+			end
+		end)
+		
+		threads[player.Name .. ' Character Child Added'] = player.Character.ChildAdded:Connect(function()
+			if
+				table.find(supernova.whitelist, player.Name)
+				or player.UserId == lp.UserId
+			then
+				if
+					player.Character:FindFirstChild('Addon')
+					and active.antidog
+				then
+					chat('undog ' .. player.Name)
+				end
+				
+				if
+					player.Character:FindFirstChild('ice')
+					and active.antifreeze
+				then
+					chat('thaw ' .. player.Name)
+				end
+			end
+		end)
+		
+		threads[player.Name .. ' Backpack Child Added'] = player.Backpack.ChildAdded:Connect(function(i)
+			if
+				not table.find(supernova.blgwhitelist, player.Name)
+				and player.UserId ~= lp.UserId
+				and active.blgears
+				and table.find(supernova.blgears, i.Name)
+			then
+				ungear(player.Name, 'BLACKLISTED')
+				pm(player.Name, i.Name .. ' is blacklisted in this server!')
+			end
+		end)
+		
+		-- Local player only barrier
+		if player.UserId ~= lp.UserId then return end
+		
+		threads[lp.Name .. ' Character Descendant Added'] = lp.Character.DescendantAdded:Connect(function(i)
+			if
+				active.antifling
+				and i.Name == 'BFRC'
+			then
+				local root = lp.Character.HumanoidRootPart
+				local bcf = root.CFrame
+				i.Force = Vector3.new(0, 0, 0)
+				repeat task.wait(); lp.Character.Humanoid.Sit = false until i == nil
+				root.CFrame = bcf
+			elseif
+				active.antisgv
+				and i.Name == 'BodyForce'
+			then
+				local root = lp.Character.HumanoidRootPart
+				local bcf = root.CFrame
+				i.Force = Vector3.new(0, 0, 0)
+				repeat task.wait() until i == nil
+				root.CFrame = bcf
+			end
+		end)
+	end
+end
+
+do
+	-- For existing players
+	for _, player in next, players:GetPlayers() do
+		patch(player) -- .Chatted
+		attach_dispatcher(player) -- Other events
+		
+		threads[player.Name .. ' Character Loaded'] = player.CharacterAdded:Connect(function()
+			attach_dispatcher(player)
+		end)
+	end
+	
+	-- For incoming players
+	threads['Player Joined'] = players.PlayerAdded:Connect(function(player)
+		patch(player) -- .Chatted
+		
+		threads[player.Name .. ' Character Loaded'] = player.CharacterAdded:Connect(function()
+			attach_dispatcher(player)
+		end)
+	end)
+end
+
+------------------------------------------------------------------------
+-- 
+-- Start-up
+--
+------------------------------------------------------------------------
+
+-- Welcome message and logging
+warning('Welcome back, ' .. lp.DisplayName .. '!')
+
+local time = math.floor( ( tick() - start_time ) * 1000 )
+
+log_file('[Loading]: loaded in ' .. time .. 'ms')
+print('[Supernova]: loaded in ' .. time .. 'ms')
+warning('Loaded in ' .. time .. 'ms')
+
+-- All your auto-exec code
+coroutine.wrap(function()
+	execute('scol')
+	execute('allantis')
+	execute('rok')
+end)()
+
+-- Personn's admin check
+supernova.personns = owns_gamepass(35748)
+
+------------------------------------------------------------------------
+--
+-- Events
+--
+------------------------------------------------------------------------
+
+-- Events
+threads['PreRender'] = run_service.PreRender:Connect(function()
+	if hookms.active then
+		if _game.Folder:FindFirstChild('Sound') and _game.Folder:FindFirstChild('Sound').SoundId == 'http://www.roblox.com/asset/?id=' .. hookms.id then
+			hookms.tm = _game.Folder:FindFirstChild('Sound').TimePosition
+		end
+	end
+	
+	-- Anti-rocket
+	if active.ark then
+		for _, v in pairs(players:GetPlayers()) do
+			for _, p in pairs(v.Character:GetChildren()) do
+				if p.Name == "Rocket" then p:Destroy() end
+			end
+		end
+	end
+	
+	-- Visualizer
+	if vis.active then
+		vis.modes[vis.mode]()
+		vis.angle += vis.speed
+		if _game.Folder:FindFirstChild("Sound") then
+			vis.mind = vis.radius + math.clamp(_game.Folder.Sound.PlaybackLoudness * 0.03, 4, 100)
+		end
+	end
+	
+	-- Perm
+	coroutine.wrap(function()
+		if active.perm then
+			execute('getpad')
+		end
+	end)()
+	
+	-- Loopgrab
+	if active.loopgrab then
+		for _, v in next, pads:GetChildren() do
+			if v:FindFirstChild('Head') then
+				coroutine.wrap(function()
+					firetouchinterest(lp.Character:WaitForChild('Head'), v.Head, 0)
+					firetouchinterest(lp.Character:WaitForChild('Head'), v.Head, 1)
+				end)()
+			end
+		end
+	end
+	
+	-- Net ownership stuff
+	for _, v in next, players:GetPlayers() do
+		if v.UserId == lp.UserId then
+			continue
+		end
+		
+		sethiddenproperty(v, 'MaximumSimulationRadius', 0.001)
+		sethiddenproperty(v, 'SimulationRadius', 0.001)
+	end
+	
+	-- Could have set it to a higher number but it seems that it's clamped at 1000
+	sethiddenproperty(lp, 'MaximumSimulationRadius', 1000)
+	sethiddenproperty(lp, 'SimulationRadius', 1000)
+	lp.ReplicationFocus = workspace
+	
+	glob.hue += 0.0025
+	if glob.hue > 1 then glob.hue = 0 end
+end)
+
+threads['Workspace Child Added'] = workspace.ChildAdded:Connect(function(i)
+	if table.find(supernova.blgears, i.Name) then
+		ungear('all', 'BLACKLISTED')
+	end
+end)
+
+threads['Player Removing'] = players.PlayerRemoving:Connect(function(plr)
+	if rkick.active and plr.Name:lower() == rkick.target:lower() then
+		local str = string.format("%.2f", tick()-rkick.time)
+		ok('Successfully kicked '..plr.Name..' in '..str..'s')
+		rkick.active = false
+		rkick.target = ''
+		rkick.time = 0
+		chat('unrocket/me')
+	end
+end)
+
+threads['Message Out'] = log_service.MessageOut:Connect(function(msg, type)
+	if not listening then
+		return
+	end
+	
+	if msg == '%finished' then
+		listening = false
+		return
+	end
+	
+	if type == Enum.MessageType.MessageOutput then
+		log(msg)
+	elseif type == Enum.MessageType.MessageInfo then
+		log(msg, Color3.new(0, 1, 1))
+	elseif type == Enum.MessageType.MessageWarning then
+		warning(msg)
+	elseif type == Enum.MessageType.MessageError then
+		log(msg, Color3.new(1, 0, 0))
+	end
+end)
+
+threads['Mouse Button 1 Down'] = ms.Button1Down:Connect(function()
+	if
+		active.attach
+		and ms.Target
+	then
+		active.attach = false
+		attach(ms.Target)
+		ok('Attaching to ' .. ms.Target.Name)
+	end
+	
+	if
+		active.fixvel
+		and ms.Target
+	then
+		active.fixvel = false
+		ms.Target.AssemblyLinearVelocity = Vector3.zero
+		ok('Fixed velocity of ' .. ms.Target.Name)
+	end
+	
+	if active.sbx then
+		for _, v in pairs(lp.Character:GetChildren()) do
+			if v:IsA("Tool") then
+				if v.Name == "Railgun" then
+					v.Click:FireServer(ms.Hit.Position)
+				elseif v.Name == "FreezeRay" then
+					v.FireServer:FireServer(ms.Hit.Position)
+				elseif v.Name == "KillerWhaleLauncher" then
+					v.ServerControl:InvokeServer("MouseClick", {Down=true})
+				else
+					v:Activate()
+				end
+			end
+		end
+	end
+end)
+
+threads['Folder Child Added'] = _game.Folder.ChildAdded:Connect(function(i)
+	for _, wl in next, supernova.whitelist do
+		if
+			active.antijail
+			and i.Name == wl .. "'s jail"
+		then
+			chat('unjail ' .. wl)
+		end
+	end
+	
+	if
+		active.antijail
+		and i.Name == lp.Name .. "'s jail"
+	then
+		chat('unjail ' .. lp.Name)
+	end
+	
+	if
+		vis.queue
+		and i.Name == 'Part'
+		and string.format('%.3f', i.Size.Z) == string.format('%.3f', tonumber(string.split(vis.size, '/')[3])+0.021)
+	then
+		table.insert(vis.parts, {Part = i, Padding = vis.append})
+		
+		if #vis.parts == vis.amount then
+			vis.queue = false
+			vis.active = true
+			
+			coroutine.wrap(function()
+				while
+					vis.active
+					and threads['PreRender']
+				do
+					vis.paints[vis.paint]()
+					task.wait(0.045)
+				end
+			end)()
+		end
+	end
+	
+	if
+		i:IsA('Sound')
+		and not vis.active
+		and hookms.active
+		and i.SoundId == 'http://www.roblox.com/asset/?id=' .. hookms.id
+	then
+		i.TimePosition = hookms.tm
+	end
+end)
+
+threads['Folder Child Removing'] = _game.Folder.ChildRemoved:Connect(function(i)
+	if
+		hookms.active
+		and i:IsA('Sound')
+		and i.SoundId == 'http://www.roblox.com/asset/?id=' .. hookms.id
+	then
+		chat('music ' .. hookms.id)
+	end
+end)
